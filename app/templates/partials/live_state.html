@@ -1,0 +1,305 @@
+<!-- Live Handoff Alert Banner (when current user is being requested to hand over a Seat) -->
+{% if incoming_handoff %}
+{% set h = incoming_handoff.handoff %}
+{% set r = incoming_handoff.resource %}
+{% set req_user = incoming_handoff.handoff_requester %}
+<div class="mb-6 rounded-2xl border-2 border-amber-500 bg-amber-950/80 p-5 shadow-2xl shadow-amber-900/30 animate-pulse">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-xs uppercase">Incoming Seat Handoff Request</span>
+                <span class="text-xs font-mono text-amber-300">{{ incoming_handoff.handoff_secs_left }}s remaining</span>
+            </div>
+            <h3 class="text-lg font-bold text-white mt-1">
+                {{ req_user.display_name if req_user else 'A tailnet user' }} is requesting access to Seat "{{ r.name }}"
+            </h3>
+            <p class="text-xs text-amber-200/80">
+                Device/Service: <span class="font-mono">{{ r.resource_type }} ({{ r.tailnet_target }})</span> ·
+                {% if r.auto_evict_on_timeout %}
+                <strong>Mode A Enabled:</strong> Seat will automatically transfer if unanswered when timer hits 0s.
+                {% else %}
+                Auto-evict is disabled on timeout.
+                {% endif %}
+            </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <form action="/api/handoff/{{ h.request_id }}/respond" method="post">
+                <input type="hidden" name="action" value="accept">
+                <button type="submit" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition">
+                    Accept &amp; Hand Over Seat
+                </button>
+            </form>
+            <form action="/api/handoff/{{ h.request_id }}/respond" method="post">
+                <input type="hidden" name="action" value="extend_10m">
+                <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition">
+                    Need +10m to Wrap Up
+                </button>
+            </form>
+            <form action="/api/handoff/{{ h.request_id }}/respond" method="post">
+                <input type="hidden" name="action" value="deny">
+                <button type="submit" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition">
+                    Decline (Busy)
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Outgoing Handoff Countdown Status -->
+{% if outgoing_handoff %}
+{% set h = outgoing_handoff.handoff %}
+{% set r = outgoing_handoff.resource %}
+<div class="mb-6 rounded-2xl border border-indigo-500/60 bg-indigo-950/60 p-4 flex items-center justify-between">
+    <div>
+        <div class="text-xs font-semibold text-indigo-300 uppercase tracking-wider">Awaiting Seat Handoff Response</div>
+        <div class="text-sm font-bold text-white mt-0.5">
+            Requested Seat "{{ r.name }}" ({{ r.tailnet_target }}) from {{ outgoing_handoff.holder.display_name if outgoing_handoff.holder else 'current holder' }}
+        </div>
+    </div>
+    <div class="text-right">
+        <div class="text-xl font-mono font-bold text-indigo-300">{{ outgoing_handoff.handoff_secs_left }}s</div>
+        <div class="text-[10px] text-slate-400">
+            {% if r.auto_evict_on_timeout %}Auto-transfers on timeout{% else %}Awaiting manual response{% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Seats Catalog Grid -->
+<div class="mb-4 flex items-center justify-between">
+    <div>
+        <h1 class="text-xl font-bold text-white">Available Seats</h1>
+        <p class="text-xs text-slate-400">Device / Service objects &amp; timeslots across your Tailnet</p>
+    </div>
+    <span class="text-[11px] font-mono text-slate-500">Live sync: {{ now.strftime('%H:%M:%S UTC') }}</span>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+    {% for card in seat_cards %}
+    {% set r = card.resource %}
+    {% set lease = card.lease %}
+    {% set holder = card.holder %}
+    <div class="rounded-2xl bg-slate-900 border {% if lease and holder and holder.id == user.id %}border-indigo-500/80 shadow-lg shadow-indigo-950/50{% elif lease %}border-amber-500/40{% else %}border-slate-800{% endif %} p-5 flex flex-col justify-between">
+        <div>
+            <!-- Seat Card Header -->
+            <div class="flex items-start justify-between gap-3 mb-3">
+                <div class="flex items-start gap-3">
+                    <!-- Resource Type Icon Badge -->
+                    <div class="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 text-indigo-400 font-bold text-xs">
+                        {% if 'Moonlight' in r.resource_type %}
+                        <span>🎮</span>
+                        {% elif 'RDP' in r.resource_type %}
+                        <span>🖥️</span>
+                        {% elif 'VNC' in r.resource_type %}
+                        <span>🖼️</span>
+                        {% elif 'SSH' in r.resource_type %}
+                        <span>⌨️</span>
+                        {% else %}
+                        <span>⚡</span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] uppercase tracking-wider font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Seat</span>
+                            <h2 class="text-base font-bold text-white">{{ r.name }}</h2>
+                        </div>
+                        <!-- Subtitle of devicename/service below for clarification -->
+                        <p class="text-xs text-slate-400 font-mono mt-0.5">
+                            {{ r.resource_type }} · {{ r.tailnet_target }} ({{ r.allowed_ports }})
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Live Status Badge -->
+                <div class="shrink-0 text-right">
+                    {% if lease %}
+                        {% if lease.status == 'AWAITING_CHECKIN' %}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                            Awaiting Check-In ({{ holder.display_name if holder else 'User' }})
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                            <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+                            In Use by {{ holder.display_name if holder else 'User' }} ({{ card.mins_left }}m left)
+                        </span>
+                        {% endif %}
+                    {% elif card.next_block %}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                            <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+                            Reserved at {{ card.next_block.start_time.strftime('%H:%M UTC') }}
+                        </span>
+                    {% else %}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            Available
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Scheduled Reservation Banner if upcoming -->
+            {% if card.next_block %}
+            <div class="mb-3 px-3 py-2 rounded-xl bg-slate-950/90 border border-slate-800 text-xs flex items-center justify-between">
+                <span class="text-slate-300">
+                    📅 Next Slot: <strong>{{ card.next_block.title }}</strong> by <span class="text-indigo-300">{{ card.next_block_user.display_name if card.next_block_user else 'User' }}</span>
+                    ({{ card.next_block.start_time.strftime('%H:%M') }}–{{ card.next_block.end_time.strftime('%H:%M UTC') }})
+                </span>
+                {% if card.next_block.user_id == user.id or user.is_admin %}
+                <form action="/schedule/{{ card.next_block.id }}/cancel" method="post">
+                    <button type="submit" class="text-[11px] text-rose-400 hover:underline">Cancel Slot</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Action Controls: Available vs Checked Out -->
+            {% if not lease %}
+            <!-- On-the-Fly Seat Checkout Bar -->
+            <div class="mt-3 p-3.5 rounded-xl bg-slate-950/80 border border-slate-800">
+                <div class="text-xs font-semibold text-slate-300 mb-2 flex items-center justify-between">
+                    <span>Quick Checkout Seat (Opens Tailnet ACL for all your devices)</span>
+                    <span class="text-[11px] text-slate-500">Max {{ r.max_checkout_minutes }}m</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    {% for mins, label in [(30, '30m'), (60, '1h'), (120, '2h'), (240, '4h')] %}
+                    {% if mins <= r.max_checkout_minutes %}
+                    <form action="/seats/{{ r.id }}/checkout" method="post" class="inline">
+                        <input type="hidden" name="duration_minutes" value="{{ mins }}">
+                        <button type="submit" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">
+                            Check Out {{ label }}
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% endfor %}
+
+                    <!-- Custom Duration Picker -->
+                    <form action="/seats/{{ r.id }}/checkout" method="post" class="flex items-center gap-1.5 ml-auto">
+                        <input type="number" name="duration_minutes" min="5" max="{{ r.max_checkout_minutes }}" value="45"
+                            class="w-16 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1 text-xs text-white text-center">
+                        <button type="submit" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 font-medium transition">
+                            Custom (m)
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% else %}
+            <!-- Active Lease Controls (Owner vs Other User) -->
+            <div class="mt-3 p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-3">
+                {% if lease.user_id == user.id %}
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-xs text-emerald-300 font-semibold">
+                        ✓ You hold this Seat until {{ lease.expires_at.strftime('%H:%M UTC') }} ({{ card.mins_left }}m remaining)
+                    </div>
+                    <div class="flex items-center gap-2">
+                        {% if lease.status == 'AWAITING_CHECKIN' %}
+                        <form action="/seats/{{ r.id }}/checkin" method="post">
+                            <button type="submit" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
+                                Check In / Start Session
+                            </button>
+                        </form>
+                        {% endif %}
+                        {% if r.allow_watch_party %}
+                        <form action="/seats/{{ r.id }}/watch-party/toggle" method="post">
+                            <button type="submit" class="px-3 py-1.5 rounded-lg {% if lease.watch_party_open %}bg-emerald-600 text-white{% else %}bg-slate-800 text-slate-200 border border-slate-700{% endif %} text-xs font-semibold transition">
+                                {% if lease.watch_party_open %}Watch Party: OPEN{% else %}Open Watch Party / Co-Op{% endif %}
+                            </button>
+                        </form>
+                        {% endif %}
+                        <form action="/seats/{{ r.id }}/release" method="post">
+                            <button type="submit" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition">
+                                Release Seat
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% else %}
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-xs text-slate-300">
+                        Checked out by <strong>{{ holder.display_name if holder else 'User' }}</strong> ({{ lease.lease_type }})
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <!-- Request Access / Takeover Button -->
+                        {% if (lease.lease_type == 'ADHOC' and r.allow_takeover_adhoc) or (lease.lease_type == 'SCHEDULED' and r.allow_takeover_scheduled) %}
+                        <form action="/api/seats/{{ r.id }}/request-access" method="post">
+                            <input type="hidden" name="requested_minutes" value="60">
+                            <button type="submit" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition">
+                                Request Access (Handoff)
+                            </button>
+                        </form>
+                        {% endif %}
+
+                        <!-- Join Watch Party Button -->
+                        {% if r.allow_watch_party and lease.watch_party_open %}
+                        <form action="/seats/{{ r.id }}/watch-party/join" method="post">
+                            <button type="submit" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">
+                                Join Watch Party / Co-Op
+                            </button>
+                        </form>
+                        {% endif %}
+
+                        <!-- Admin Mirror Button -->
+                        {% if user.is_admin and r.allow_admin_mirror %}
+                        <form action="/seats/{{ r.id }}/watch-party/join" method="post">
+                            <input type="hidden" name="admin_mirror" value="true">
+                            <button type="submit" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs font-medium transition">
+                                Admin Mirror
+                            </button>
+                        </form>
+                        <form action="/seats/{{ r.id }}/release" method="post">
+                            <button type="submit" class="px-2.5 py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-800 border border-rose-700 text-rose-200 text-xs font-medium transition">
+                                Force Evict
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if card.spectators %}
+                <div class="text-[11px] text-indigo-300 border-t border-slate-800 pt-2">
+                    👥 Active Watch Party / Spectators in ACL: <span class="font-mono">{{ card.spectators | join(', ') }}</span>
+                    {% if r.spectator_url %}
+                    · <a href="{{ r.spectator_url }}" target="_blank" class="underline hover:text-white">Open Spectator Stream</a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Connection Details Drawer -->
+        <details class="mt-4 group border-t border-slate-800/80 pt-3" {% if lease and lease.user_id == user.id %}open{% endif %}>
+            <summary class="cursor-pointer text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center justify-between list-none">
+                <span>Connection Details &amp; Launchpad ({{ r.tailnet_target }})</span>
+                <span class="text-[11px] text-slate-500 group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+            <div class="mt-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-2.5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <span class="text-slate-400">Target Host/Tag:</span>
+                        <code class="text-indigo-300 bg-slate-900 px-1.5 py-0.5 rounded">{{ r.tailnet_target }}</code>
+                        <span class="text-slate-400 ml-2">Ports:</span>
+                        <code class="text-slate-300 bg-slate-900 px-1.5 py-0.5 rounded">{{ r.allowed_ports }}</code>
+                    </div>
+                    {% if r.connection_uri %}
+                    <a href="{{ r.connection_uri }}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition">
+                        <span>Launch {{ r.resource_type.split('/')[0] }}</span>
+                        <span>↗</span>
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="prose prose-invert prose-xs max-w-none text-slate-300 leading-relaxed border-t border-slate-800/80 pt-2">
+                    {{ r.connection_instructions | markdown | safe }}
+                </div>
+                {% if r.allow_watch_party and r.spectator_instructions %}
+                <div class="text-[11px] text-slate-400 border-t border-slate-800/80 pt-2">
+                    <strong>Watch Party / Co-Op Info:</strong> {{ r.spectator_instructions }}
+                </div>
+                {% endif %}
+            </div>
+        </details>
+    </div>
+    {% endfor %}
+</div>

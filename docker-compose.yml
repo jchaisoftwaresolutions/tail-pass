@@ -1,0 +1,15 @@
+services:
+  tail-pass:
+    build: .
+    container_name: tail-pass
+    ports:
+      - "8080:8080"
+    environment:
+      - TAILPASS_DB_PATH=/app/data/tailpass.db
+      - TAILSCALE_SOCKET=/var/run/tailscale/tailscaled.sock
+      # Optional: Set for local development outside a tailnet
+      # - DEV_MOCK_USER=alice@example.com
+    volumes:
+      - ./data:/app/data
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
+    restart: unless-stopped

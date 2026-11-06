@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Live HTMX Polling Container (updates every 5 seconds for handoff countdowns & lease changes) -->
+<div id="live-dashboard-region" hx-get="/partials/live-state" hx-trigger="every 5s" hx-swap="innerHTML">
+    {% include "partials/live_state.html" %}
+</div>
+
+<!-- Seat Scheduling & Calendar Timeline Section -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+    <!-- Reserve a Seat Timeslot Form -->
+    <div class="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+        <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">Schedule</span>
+            <h2 class="text-base font-bold text-white">Reserve a Seat Timeslot</h2>
+        </div>
+        <p class="text-xs text-slate-400 mb-4">
+            Scheduled Seat blocks strictly preempt ad-hoc sessions (with T-10m and T-5m warnings).
+        </p>
+
+        <form action="/schedule/create" method="post" class="space-y-3">
+            <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Select Seat (Device / Service)</label>
+                <select name="resource_id" required class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-white">
+                    {% for card in seat_cards %}
+                    <option value="{{ card.resource.id }}">
+                        {{ card.resource.name }} ({{ card.resource.resource_type }} · {{ card.resource.tailnet_target }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Session Label</label>
+                <input type="text" name="title" value="Evening Gaming / Work Block" required
+                    class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-white">
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Start Time (UTC)</label>
+                    <input type="datetime-local" name="start_iso" required
+                        value="{{ now.strftime('%Y-%m-%dT%H:%M') }}"
+                        class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2.5 py-2 text-xs text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Duration</label>
+                    <select name="duration_minutes" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2.5 py-2 text-xs text-white">
+                        <option value="30">30 minutes</option>
+                        <option value="60" selected>1 hour</option>
+                        <option value="120">2 hours</option>
+                        <option value="180">3 hours</option>
+                        <option value="240">4 hours</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 px-4 rounded-xl transition">
+                Book Scheduled Seat Timeslot
+            </button>
+        </form>
+    </div>
+
+    <!-- Visual Daily/Weekly Seat Schedule Timeline & Activity Feed -->
+    <div class="lg:col-span-2 space-y-6">
+        <div class="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-base font-bold text-white">Seat Reservation Timeline</h2>
+                    <p class="text-xs text-slate-400">Upcoming and active scheduled Seat blocks (No-show forfeit window enforced per Seat)</p>
+                </div>
+            </div>
+
+            {% if upcoming_blocks %}
+            <div class="space-y-2.5">
+                {% for blk in upcoming_blocks %}
+                {% set blk_user = users_by_id.get(blk.user_id) %}
+                <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono uppercase
+                                {% if blk.status == 'ACTIVE' %}bg-emerald-500/20 text-emerald-300 border border-emerald-500/30
+                                {% else %}bg-indigo-500/20 text-indigo-300 border border-indigo-500/30{% endif %}">
+                                {{ blk.status }}
+                            </span>
+                            <span class="text-xs font-bold text-white">{{ blk.title }}</span>
+                            <span class="text-xs text-slate-400">·</span>
+                            <span class="text-xs text-indigo-300 font-medium">
+                                {% for c in seat_cards %}{% if c.resource.id == blk.resource_id %}{{ c.resource.name }} ({{ c.resource.tailnet_target }}){% endif %}{% endfor %}
+                            </span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-1 font-mono">
+                            Reserved by <strong>{{ blk_user.display_name if blk_user else 'User' }}</strong> ({{ blk_user.login_name if blk_user else '' }})
+                            · {{ blk.start_time.strftime('%b %d, %H:%M UTC') }} → {{ blk.end_time.strftime('%H:%M UTC') }}
+                        </div>
+                    </div>
+
+                    {% if blk.user_id == user.id or user.is_admin %}
+                    <form action="/schedule/{{ blk.id }}/cancel" method="post">
+                        <button type="submit" class="px-2.5 py-1 rounded-lg bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs transition">
+                            Remove
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-8 text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl">
+                No upcoming scheduled Seat blocks. All Seats are currently open for on-the-fly checkout.
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Live Managed ACL Rule Preview & Recent Notifications -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="rounded-2xl bg-slate-900 border border-slate-800 p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Active Tailnet Seat ACL Block</h3>
+                    <span class="text-[10px] font-mono text-indigo-400">{{ cfg.control_plane_mode if cfg else 'mock' }}</span>
+                </div>
+                <pre class="text-[11px] font-mono text-emerald-300 bg-slate-950 p-3 rounded-xl border border-slate-800 overflow-x-auto max-h-40">{{ cfg.last_acl_payload_preview if cfg else '{}' }}</pre>
+            </div>
+
+            <div class="rounded-2xl bg-slate-900 border border-slate-800 p-4">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">Recent Seat Events &amp; Alerts</h3>
+                <div class="space-y-2 max-h-40 overflow-y-auto">
+                    {% for ev in recent_notifications %}
+                    <div class="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                        <div class="font-semibold text-white flex items-center justify-between">
+                            <span>{{ ev.title }}</span>
+                            <span class="text-[10px] font-mono text-slate-500">{{ ev.created_at.strftime('%H:%M:%S') }}</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">{{ ev.message }}</div>
+                    </div>
+                    {% else %}
+                    <div class="text-xs text-slate-500 py-4 text-center">No events recorded yet.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
