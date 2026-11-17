@@ -25,25 +25,28 @@ In Tail-Pass, shared single-occupancy devices, services, and reservation timeslo
 
 ---
 
-## Quick Start (Direct GitHub Install / Local Python)
+## Quick Start (Direct GitHub Install / Local Linux or Python)
 
 ```bash
 git clone https://github.com/jchaisoftwaresolutions/tail-pass.git
 cd tail-pass
 
-python -m venv .venv
-# Linux / macOS:
-source .venv/bin/activate
-# Windows PowerShell:
-# .\.venv\Scripts\Activate.ps1
-
-pip install -r requirements.txt
-
-# Run on port 8080:
-uvicorn app.main:app --host 0.0.0.0 --port 8080
+# Run the lightweight bootstrap installer:
+# - Checks for python3, python3-venv, and python3-pip (prompts to install with sudo if missing)
+# - Creates/repairs .venv and installs FastAPI, Uvicorn, SQLModel, AsyncSSH, etc. inside .venv
+chmod +x install.sh run.sh
+./install.sh
 ```
 
-Then open `http://localhost:8080` in your browser.
+To start the server later at any time (Always uses `.venv/bin/python -m uvicorn` so system `/usr/bin/uvicorn` never conflicts):
+
+```bash
+./run.sh
+# Or directly:
+./.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+```
+
+Then open `http://localhost:8080` (or `http://<your-tailscale-ip>:8080`) in your browser.
 
 ---
 
