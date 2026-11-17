@@ -141,7 +141,7 @@ async def dashboard_home(
     user: User = Depends(resolve_current_user),
 ):
     ctx = _build_dashboard_context(request, session, user)
-    return templates.TemplateResponse("dashboard.html", ctx)
+    return templates.TemplateResponse(request, "dashboard.html", ctx)
 
 
 @router.get("/partials/live-state", response_class=HTMLResponse)
@@ -151,7 +151,7 @@ async def live_state_partial(
     user: User = Depends(resolve_current_user),
 ):
     ctx = _build_dashboard_context(request, session, user)
-    return templates.TemplateResponse("partials/live_state.html", ctx)
+    return templates.TemplateResponse(request, "partials/live_state.html", ctx)
 
 
 @router.post("/seats/{resource_id}/checkout")
