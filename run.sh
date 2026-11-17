@@ -18,8 +18,38 @@ if [ ! -x ".venv/bin/python" ] || ! ./.venv/bin/python -c "import fastapi, uvico
     ./install.sh --no-start
 fi
 
+if [ -f ".env" ]; then
+    # shellcheck disable=SC1091
+    source .env || true
+fi
+
 PORT="${1:-${PORT:-8080}}"
 HOST="${HOST:-0.0.0.0}"
+
+# Check if already running under systemd
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet tail-pass.service 2>/dev/null; then
+    echo -e "${YELLOW}ℹ️  tail-pass.service is already running in the background via systemd.${NC}"
+    echo "Options:"
+    echo "  1) Show service status & exit"
+    echo "  2) Restart tail-pass.service"
+    echo "  3) Stop tail-pass.service and run interactively in foreground"
+    read -r -p "Select an option [1/2/3] (default: 1): " svc_choice
+    svc_choice="${svc_choice:-1}"
+    case "$svc_choice" in
+        1)
+            sudo systemctl status tail-pass.service --no-pager
+            exit 0
+            ;;
+        2)
+            sudo systemctl restart tail-pass.service
+            sudo systemctl status tail-pass.service --no-pager
+            exit 0
+            ;;
+        3)
+            sudo systemctl stop tail-pass.service
+            ;;
+    esac
+fi
 
 port_in_use() {
     local p="$1"
@@ -38,7 +68,6 @@ while port_in_use "$PORT"; do
         sudo ss -tulnp | grep -E ":${PORT}[[:space:]]" || true
     fi
 
-    # Suggest next free port (e.g. 8085)
     SUGGESTED_PORT=8085
     while port_in_use "$SUGGESTED_PORT"; do
         SUGGESTED_PORT=$((SUGGESTED_PORT + 1))
@@ -75,6 +104,46 @@ done
 
 export PORT
 export TAILPASS_BASE_URL="${TAILPASS_BASE_URL:-http://localhost:${PORT}}"
+
+# Offer to install as a systemd service if not yet installed
+if command -v systemctl >/dev/null 2>&1 && [ ! -f "/etc/systemd/system/tail-pass.service" ]; then
+    echo ""
+    read -r -p "Would you like to install and run Tail-Pass as a systemd background service on port ${PORT}? [y/N] " make_svc
+    if [[ "${make_svc:-N}" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        SERVICE_USER="$(id -un)"
+        SERVICE_GROUP="$(id -gn)"
+        cat > .env <<EOF
+PORT=${PORT}
+HOST=0.0.0.0
+TAILPASS_DB_PATH=${SCRIPT_DIR}/tailpass.db
+TAILPASS_BASE_URL=http://localhost:${PORT}
+EOF
+        sudo tee /etc/systemd/system/tail-pass.service > /dev/null <<EOF
+[Unit]
+Description=Tail-Pass (ts-reserve) Tailnet Seat Checkout & ACL Gateway
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${SERVICE_USER}
+Group=${SERVICE_GROUP}
+WorkingDirectory=${SCRIPT_DIR}
+EnvironmentFile=${SCRIPT_DIR}/.env
+ExecStart=${SCRIPT_DIR}/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        sudo systemctl daemon-reload
+        sudo systemctl enable --now tail-pass.service
+        echo -e "${GREEN}✓ Tail-Pass systemd service installed and started on port ${PORT}!${NC}"
+        sudo systemctl status tail-pass.service --no-pager
+        exit 0
+    fi
+fi
 
 echo -e "${GREEN}Starting Tail-Pass on http://${HOST}:${PORT} ...${NC}"
 exec ./.venv/bin/python -m uvicorn app.main:app --host "$HOST" --port "$PORT"
