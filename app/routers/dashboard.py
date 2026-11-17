@@ -20,6 +20,7 @@ from app.db import (
     SystemConfig,
     TakeoverRequest,
     User,
+    ensure_aware,
     get_session,
     utcnow,
 )
@@ -77,7 +78,7 @@ def _build_dashboard_context(
     for res in resources:
         lease = lease_by_resource.get(res.id)
         holder = users_by_id.get(lease.user_id) if lease else None
-        mins_left = max(0, int((lease.expires_at - now).total_seconds() // 60)) if lease else 0
+        mins_left = max(0, int((ensure_aware(lease.expires_at) - now).total_seconds() // 60)) if lease else 0
         res_blocks = [b for b in upcoming_blocks if b.resource_id == res.id]
         next_block = res_blocks[0] if res_blocks else None
         next_block_user = users_by_id.get(next_block.user_id) if next_block else None
@@ -88,7 +89,7 @@ def _build_dashboard_context(
         )
         handoff = handoff_by_resource.get(res.id)
         handoff_requester = users_by_id.get(handoff.requester_id) if handoff else None
-        handoff_secs_left = max(0, int((handoff.expires_at - now).total_seconds())) if handoff else 0
+        handoff_secs_left = max(0, int((ensure_aware(handoff.expires_at) - now).total_seconds())) if handoff else 0
 
         seat_cards.append(
             {
@@ -112,7 +113,7 @@ def _build_dashboard_context(
 
     recent_notifications = session.exec(
         select(NotificationEvent)
-        .where((NotificationEvent.target_user_id == user.id) | (NotificationEvent.target_user_id.is_(None)))
+        .where((NotificationEvent.target_user_id == user.id) | (NotificationEvent.target_user_id == None))  # noqa: E711
         .order_by(NotificationEvent.id.desc())
         .limit(6)
     ).all()
@@ -140,7 +141,7 @@ async def dashboard_home(
     user: User = Depends(resolve_current_user),
 ):
     ctx = _build_dashboard_context(request, session, user)
-    return templates.TemplateResponse(request, "dashboard.html", ctx)
+    return templates.TemplateResponse("dashboard.html", ctx)
 
 
 @router.get("/partials/live-state", response_class=HTMLResponse)
@@ -150,7 +151,7 @@ async def live_state_partial(
     user: User = Depends(resolve_current_user),
 ):
     ctx = _build_dashboard_context(request, session, user)
-    return templates.TemplateResponse(request, "partials/live_state.html", ctx)
+    return templates.TemplateResponse("partials/live_state.html", ctx)
 
 
 @router.post("/seats/{resource_id}/checkout")
@@ -225,7 +226,7 @@ async def checkout_seat(
         sched_holder = session.get(User, next_scheduled.user_id)
         holder_name = sched_holder.display_name if sched_holder else "another user"
         # Cap 5 minutes before the scheduled reservation starts (or at start_time if tight)
-        buffer_end = next_scheduled.start_time - timedelta(minutes=5)
+        buffer_end = ensure_aware(next_scheduled.start_time) - timedelta(minutes=5)
         avail_mins = int((buffer_end - now).total_seconds() // 60)
         if avail_mins < 5:
             start_s = next_scheduled.start_time.strftime("%H:%M UTC")
@@ -418,6 +419,9 @@ async def create_schedule_block(
 
     try:
         start_dt = datetime.fromisoformat(start_iso.replace("Z", ""))
+        if start_dt.tzinfo is None:
+            from datetime import timezone
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
     except ValueError:
         return RedirectResponse(url="/?msg=Invalid+start+time+format&level=danger", status_code=303)
 

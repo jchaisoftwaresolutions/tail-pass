@@ -11,6 +11,7 @@ from app.db import (
     Resource,
     TakeoverRequest,
     User,
+    ensure_aware,
     get_session,
     utcnow,
 )
@@ -137,7 +138,7 @@ async def request_seat_access(
                 "requester": user.display_name,
                 "requester_name": user.display_name,
                 "timeout_seconds": timeout_secs,
-                "minutes_left": int( max(0, (lease.expires_at - now).total_seconds() // 60) ),
+                "minutes_left": int(max(0, (ensure_aware(lease.expires_at) - now).total_seconds() // 60)),
                 "request_id": req_id,
                 "callback_url": callback_url,
             },
@@ -246,7 +247,7 @@ async def respond_handoff(
         if lease:
             # Ensure at least 10m from now if expiring sooner
             min_exp = now + timedelta(minutes=10)
-            if lease.expires_at < min_exp:
+            if ensure_aware(lease.expires_at) < min_exp:
                 lease.expires_at = min_exp
                 session.add(lease)
         session.commit()

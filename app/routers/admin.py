@@ -22,7 +22,6 @@ async def admin_panel(
     resources = session.exec(select(Resource).order_by(Resource.id)).all()
     users = session.exec(select(User).order_by(User.id)).all()
     return templates.TemplateResponse(
-        request,
         "admin.html",
         {
             "request": request,

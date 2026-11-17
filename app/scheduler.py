@@ -9,6 +9,7 @@ from app.db import (
     TakeoverRequest,
     User,
     engine,
+    ensure_aware,
     utcnow,
 )
 from app.drivers.acl_base import sync_control_plane_acls
@@ -34,7 +35,7 @@ async def scheduler_tick() -> None:
                 continue
 
             # Check regular expiration
-            if now >= lease.expires_at:
+            if now >= ensure_aware(lease.expires_at):
                 lease.status = "ENDED"
                 session.add(lease)
                 if lease.schedule_block_id:
@@ -58,7 +59,7 @@ async def scheduler_tick() -> None:
                 and not lease.checked_in
                 and resource.no_show_forfeit_minutes > 0
             ):
-                forfeit_deadline = lease.started_at + timedelta(minutes=resource.no_show_forfeit_minutes)
+                forfeit_deadline = ensure_aware(lease.started_at) + timedelta(minutes=resource.no_show_forfeit_minutes)
                 if now >= forfeit_deadline:
                     lease.status = "FORFEITED"
                     session.add(lease)
@@ -82,7 +83,7 @@ async def scheduler_tick() -> None:
                 lease.status == "ACTIVE"
                 and resource.host_verified
                 and resource.enable_idle_release
-                and (now - lease.last_heartbeat_at).total_seconds() >= 300
+                and (now - ensure_aware(lease.last_heartbeat_at)).total_seconds() >= 300
             ):
                 ok, exit_code, _ = await run_ssh_hook(
                     resource,
@@ -105,7 +106,7 @@ async def scheduler_tick() -> None:
                     continue
 
             # Check warnings at T-10m and T-5m (either before lease end or before an upcoming scheduled block)
-            minutes_left = (lease.expires_at - now).total_seconds() / 60.0
+            minutes_left = (ensure_aware(lease.expires_at) - now).total_seconds() / 60.0
             if 5.0 < minutes_left <= 10.0 and not lease.warned_10m:
                 lease.warned_10m = True
                 session.add(lease)
